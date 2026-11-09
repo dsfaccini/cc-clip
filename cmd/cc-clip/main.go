@@ -160,6 +160,10 @@ Local daemon and diagnostics (run on your local machine):
   serve              Run the clipboard daemon in the foreground
     --port           Listen port (default: 18339, env: CC_CLIP_PORT)
     --rotate-token   Force new token generation (ignore existing)
+    --allow-text-read
+                     Serve clipboard text to remotes (default: images only)
+    --allow-remote-clipboard-write
+                     Let remotes set the local clipboard (default: off)
   service            Run the daemon at login (macOS launchd / Windows logon)
     install          Install and start service
     uninstall        Stop and remove service

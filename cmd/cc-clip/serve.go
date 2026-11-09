@@ -65,7 +65,14 @@ func cmdServe() {
 	}
 	instanceID := loadInstanceIDOrUnavailable(tokenDir)
 
-	srv.SetTextWriter(daemon.NewClipboardTextWriter())
+	// Remotes get clipboard images only unless asked: text read and clipboard
+	// write let any token holder on the remote read secrets or plant a paste.
+	if hasFlag("allow-text-read") {
+		srv.EnableTextRead()
+	}
+	if hasFlag("allow-remote-clipboard-write") {
+		srv.SetTextWriter(daemon.NewClipboardTextWriter())
+	}
 	srv.SetVersion(version)
 	srv.SetInstanceID(instanceID)
 	srv.EnableNoncePersistence()

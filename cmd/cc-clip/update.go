@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	updateRepo          = "ShunmeiCho/cc-clip"
+	updateRepo          = "dsfaccini/cc-clip"
 	updateAPIURL        = "https://api.github.com/repos/" + updateRepo + "/releases"
 	updateDownloadBase  = "https://github.com/" + updateRepo + "/releases/download"
 	updateLatestPage    = "https://github.com/" + updateRepo + "/releases/latest"

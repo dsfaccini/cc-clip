@@ -79,6 +79,7 @@ type Server struct {
 	addr              string
 	mux               *http.ServeMux
 	textWriter        ClipboardTextWriter // nil until SetTextWriter; POST /clipboard/text answers 501 without it
+	textReadEnabled   bool                // false until EnableTextRead; GET /clipboard/text answers 403 without it
 	receiptCh         chan receiptEvent   // nil until EnableDeliveryReceipts; drained by the single receipt writer
 	receiptDrops      atomic.Int64        // receipts dropped on a full queue; reported by the writer, never the handler
 	version           string              // reported by /health when set via SetVersion (#22 P2)
@@ -657,7 +658,18 @@ func (s *Server) handleClipboardImage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// EnableTextRead serves clipboard text to remotes. Off by default: any process
+// on the remote that holds the token could otherwise read every password, code
+// or key that passes through the local clipboard.
+func (s *Server) EnableTextRead() {
+	s.textReadEnabled = true
+}
+
 func (s *Server) handleClipboardText(w http.ResponseWriter, r *http.Request) {
+	if !s.textReadEnabled {
+		http.Error(w, "clipboard text read is disabled; start serve with --allow-text-read", http.StatusForbidden)
+		return
+	}
 	info, err := s.clipboard.Type()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

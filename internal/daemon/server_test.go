@@ -505,12 +505,34 @@ func TestClipboardImageSourceTooLarge(t *testing.T) {
 	}
 }
 
+func TestClipboardTextForbiddenByDefault(t *testing.T) {
+	clip := &mockClipboard{
+		clipType: ClipboardInfo{Type: ClipboardText},
+		text:     "secret",
+	}
+	srv, tok := newTestServer(clip)
+
+	req := httptest.NewRequest("GET", "/clipboard/text", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("User-Agent", "cc-clip/0.1")
+	w := httptest.NewRecorder()
+	srv.mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if strings.Contains(w.Body.String(), "secret") {
+		t.Fatalf("body leaked clipboard text: %q", w.Body.String())
+	}
+}
+
 func TestClipboardTextReturnsData(t *testing.T) {
 	clip := &mockClipboard{
 		clipType: ClipboardInfo{Type: ClipboardText},
 		text:     "hello from local clipboard\n",
 	}
 	srv, tok := newTestServer(clip)
+	srv.EnableTextRead()
 
 	req := httptest.NewRequest("GET", "/clipboard/text", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
@@ -532,6 +554,7 @@ func TestClipboardTextReturnsData(t *testing.T) {
 func TestClipboardTextNoContentWhenImage(t *testing.T) {
 	clip := &mockClipboard{clipType: ClipboardInfo{Type: ClipboardImage, Format: "png"}}
 	srv, tok := newTestServer(clip)
+	srv.EnableTextRead()
 
 	req := httptest.NewRequest("GET", "/clipboard/text", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
@@ -550,6 +573,7 @@ func TestClipboardTextTooLarge(t *testing.T) {
 		text:     strings.Repeat("x", maxTextSize()+1),
 	}
 	srv, tok := newTestServer(clip)
+	srv.EnableTextRead()
 
 	req := httptest.NewRequest("GET", "/clipboard/text", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
@@ -570,6 +594,7 @@ func TestClipboardTextSourceTooLarge(t *testing.T) {
 		},
 	}
 	srv, tok := newTestServer(clip)
+	srv.EnableTextRead()
 
 	req := httptest.NewRequest("GET", "/clipboard/text", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
