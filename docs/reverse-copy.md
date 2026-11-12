@@ -4,7 +4,7 @@ cc-clip's main direction is local → remote: your Mac or Windows clipboard
 reaches a remote agent. This is the other direction — text you copy inside a
 remote session landing on the clipboard of the machine in front of you.
 
-## What already works, with nothing to configure
+## What works once remote write is on
 
 Any remote tool that copies by invoking `xclip` or `wl-copy` is intercepted by
 the cc-clip shim, which forwards the bytes to your local clipboard *and*
