@@ -274,6 +274,12 @@ func Status() (bool, error) {
 	return false, nil
 }
 
+// InstalledServeFlags is not read back on Windows, for the same reason as
+// InstalledPort.
+func InstalledServeFlags() []string {
+	return nil
+}
+
 // InstalledPort is not read back on Windows: the update flow that needs it is
 // macOS-only (cmdUpdate returns early on Windows).
 func InstalledPort() (int, bool) {

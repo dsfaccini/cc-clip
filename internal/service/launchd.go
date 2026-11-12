@@ -201,6 +201,32 @@ func parsePlistPort(plist string) (int, bool) {
 	return 0, false
 }
 
+// InstalledServeFlags reports the serve flags that follow --port in the
+// installed plist. Callers that re-register the service pass them back to
+// Install, or the re-registration silently drops opt-ins such as
+// --allow-remote-clipboard-write.
+func InstalledServeFlags() []string {
+	data, err := os.ReadFile(PlistPath())
+	if err != nil {
+		return nil
+	}
+	return parsePlistServeFlags(string(data))
+}
+
+func parsePlistServeFlags(plist string) []string {
+	args, ok := programArgumentsArray(stripXMLComments(plist))
+	if !ok {
+		return nil
+	}
+	values := plistStringValues(args)
+	for i := 0; i+1 < len(values); i++ {
+		if values[i] == "--port" {
+			return values[i+2:]
+		}
+	}
+	return nil
+}
+
 // stripXMLComments removes <!-- ... --> spans. An unterminated comment makes
 // the rest of the document unreadable, which is reported as "no port" rather
 // than guessed at.

@@ -28,7 +28,7 @@ func TestDaemonVersionNotice(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := daemonVersionNotice(tt.running, tt.own)
+			got := daemonVersionNotice(tt.running, tt.own, nil)
 			if tt.wantWarn {
 				if got == "" {
 					t.Fatal("expected a warning")
@@ -44,5 +44,17 @@ func TestDaemonVersionNotice(t *testing.T) {
 				t.Fatalf("expected silence, got %q", got)
 			}
 		})
+	}
+}
+
+// TestDaemonVersionNoticeRepeatsServeFlags: the manual restart command must
+// carry the installed service's serve flags, or following it turns opt-ins
+// such as --allow-remote-clipboard-write off without any error.
+func TestDaemonVersionNoticeRepeatsServeFlags(t *testing.T) {
+	t.Parallel()
+	got := daemonVersionNotice("0.9.2", "0.9.3", []string{"--allow-remote-clipboard-write"})
+	want := "cc-clip service uninstall && cc-clip service install --allow-remote-clipboard-write')"
+	if !strings.HasSuffix(got, want) {
+		t.Fatalf("notice %q must end with %q", got, want)
 	}
 }

@@ -24,6 +24,11 @@ func Status() (bool, error) {
 	return false, fmt.Errorf("launchd service is only supported on macOS")
 }
 
+// InstalledServeFlags is not supported on non-darwin platforms.
+func InstalledServeFlags() []string {
+	return nil
+}
+
 // InstalledPort is not supported on non-darwin platforms.
 func InstalledPort() (int, bool) {
 	return 0, false

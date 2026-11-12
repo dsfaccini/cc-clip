@@ -668,7 +668,7 @@ func cmdStatus() {
 		// in-place binary replacement does not restart the service, so the
 		// running daemon can silently lag this binary.
 		if h, err := tunnel.FetchHealth(addr, probeTimeout); err == nil {
-			if notice := daemonVersionNotice(h.Version, version); notice != "" {
+			if notice := daemonVersionNotice(h.Version, version, service.InstalledServeFlags()); notice != "" {
 				fmt.Println(notice)
 			}
 		}

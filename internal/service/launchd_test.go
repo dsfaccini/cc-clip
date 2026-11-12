@@ -59,6 +59,12 @@ func TestGeneratePlist_ServeFlags(t *testing.T) {
 	if port, ok := parsePlistPort(content); !ok || port != 9999 {
 		t.Fatalf("parsePlistPort = %d, %v; want 9999, true", port, ok)
 	}
+	if got := parsePlistServeFlags(content); len(got) != 1 || got[0] != "--allow-remote-clipboard-write" {
+		t.Fatalf("parsePlistServeFlags = %q, want the one serve flag back", got)
+	}
+	if got := parsePlistServeFlags(generatePlist("/opt/bin/cc-clip", 9999, nil)); len(got) != 0 {
+		t.Fatalf("parsePlistServeFlags = %q for a plist without serve flags", got)
+	}
 }
 
 func TestPlistPath(t *testing.T) {

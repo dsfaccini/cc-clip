@@ -87,7 +87,9 @@ covers rich text.
 - The opt-in is the flag only: `serve --allow-remote-clipboard-write`
   (`cmdServe`). `CC_CLIP_ALLOW_REMOTE_WRITE` is not implemented.
   `service install --allow-remote-clipboard-write` writes the flag into the
-  launchd plist (`generatePlist`), so the login service keeps it.
+  launchd plist (`generatePlist`), so the login service keeps it. `cc-clip
+  update` and the restart command that `cc-clip status` prints read it back
+  (`InstalledServeFlags`), so re-registering the service keeps it too.
 - The same flag enables `POST /clipboard/html` (`handleClipboardHTMLWrite`). It
   sets the HTML and plain-text flavors in one write, so a remote agent can hand
   formatted text, such as release notes for Slack, to the Mac clipboard. Only
@@ -252,7 +254,7 @@ to any host name and spoof delivery receipts
 
 No command execution from request data: the one script that carries request
 text is `pasteboardHTMLScript`'s, as hex data and an escaped string literal
-(§2). No URL supplied by the remote is opened. The only URL the code
+(Required changes 2). No URL supplied by the remote is opened. The only URL the code
 opens is `file://` plus the daemon-built preview path in
 `buildTerminalNotifierArgs`; the icon path comes from the local environment.
 `scripts/cc-clip-notify.swift` is not referenced by any Go code, the Makefile or
@@ -494,11 +496,15 @@ previews.
 - **Skip what you do not use.** `--no-notify` skips the nonce and hooks; run
   `connect --no-hooks` if you do not want `Stop`/`Notification` entries written
   into `~/.claude/settings.json`. Do not install the Codex/Xvfb path.
-- **Paste images only.** With required changes 1 and 2 applied, the remaining
-  exposure is clipboard *images*: a screenshot of a password manager, a private
-  key, or a terminal with secrets is readable by any process in `agent` while
-  the tunnel is open. That is the feature, and it should be a conscious rule:
-  keep secrets off the Mac clipboard while connected.
+- **Read images only; write is on.** With required change 1 applied, the
+  remaining read exposure is clipboard *images*: a screenshot of a password
+  manager, a private key, or a terminal with secrets is readable by any process
+  in `agent` while the tunnel is open. That is the feature, and it should be a
+  conscious rule: keep secrets off the Mac clipboard while connected. Remote
+  write is on by the decision in required change 2: install the service with
+  `cc-clip service install --allow-remote-clipboard-write`. The box's `xclip`
+  shim then forwards every `xclip -selection clipboard` write to the Mac
+  clipboard as well.
 - **`cc-clip paste` leaves images on the remote disk.** `internal/tunnel/fetch.go:FetchImage`
   writes `0600` files under `DefaultOutDir` (`ensurePrivateOutDir` verifies
   owner) and does not delete them; on a shared box, root and the account can
