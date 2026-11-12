@@ -123,8 +123,15 @@ If neither line appears, the shim is not on `PATH` ahead of the real binary.
 
 ## Notes
 
-- Text only. Images do not travel in this direction; open an issue if you have
-  a case that needs them.
+- In this fork, remote writes are off by default. Start the local daemon with
+  `cc-clip serve --allow-remote-clipboard-write`, or install the service with
+  `cc-clip service install --allow-remote-clipboard-write`. Without the flag
+  every write answers 501 (`SECURITY-AUDIT.md` §2).
+- Text and rich text only. `cc-clip copy --html notes.html < notes.md` puts the
+  file on the local clipboard as HTML and stdin as plain text, so a paste into
+  Slack or a mail client keeps links and formatting. Rich text needs a macOS
+  local machine. Images do not travel in this direction; open an issue if you
+  have a case that needs them.
 - An accepted write raises a local notification. Its text is fixed — "A remote
   session wrote to this clipboard." — and deliberately says nothing about the
   content or its size, so a burst of yanks collapses into one notification

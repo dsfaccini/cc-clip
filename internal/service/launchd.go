@@ -37,7 +37,13 @@ func logPath() string {
 // generatePlist creates the launchd plist XML content.
 // Includes an explicit PATH so Homebrew tools (pngpaste) are found
 // even though launchd doesn't source the user's shell profile.
-func generatePlist(binaryPath string, port int) string {
+// serveFlags follow --port in ProgramArguments; callers pass only fixed flag
+// names, so they need no XML escaping.
+func generatePlist(binaryPath string, port int, serveFlags []string) string {
+	var flags strings.Builder
+	for _, f := range serveFlags {
+		fmt.Fprintf(&flags, "\n        <string>%s</string>", f)
+	}
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -49,7 +55,7 @@ func generatePlist(binaryPath string, port int) string {
         <string>%s</string>
         <string>serve</string>
         <string>--port</string>
-        <string>%d</string>
+        <string>%d</string>%s
     </array>
     <key>EnvironmentVariables</key>
     <dict>
@@ -66,7 +72,7 @@ func generatePlist(binaryPath string, port int) string {
     <string>%s</string>
 </dict>
 </plist>
-`, plistLabel, binaryPath, port, logPath(), logPath())
+`, plistLabel, binaryPath, port, flags.String(), logPath(), logPath())
 }
 
 // launchctlLoad loads a plist via launchctl. Overridable for testing.
@@ -96,8 +102,9 @@ var launchctlList = func(label string) (bool, error) {
 	return true, nil
 }
 
-// Install writes the plist file and loads the service via launchctl.
-func Install(binaryPath string, port int) error {
+// Install writes the plist file and loads the service via launchctl. The
+// daemon runs `serve --port <port>` followed by serveFlags.
+func Install(binaryPath string, port int, serveFlags ...string) error {
 	plist := PlistPath()
 
 	// Ensure LaunchAgents directory exists
@@ -106,7 +113,7 @@ func Install(binaryPath string, port int) error {
 		return fmt.Errorf("cannot create LaunchAgents directory: %w", err)
 	}
 
-	content := generatePlist(binaryPath, port)
+	content := generatePlist(binaryPath, port, serveFlags)
 	if err := os.WriteFile(plist, []byte(content), 0644); err != nil {
 		return fmt.Errorf("cannot write plist: %w", err)
 	}

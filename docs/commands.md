@@ -68,6 +68,7 @@ Complete cc-clip command reference. For what each feature is for and what you sh
 | Command | Description |
 |---------|-------------|
 | `some-command \| cc-clip copy` | Put the piped text on your local clipboard verbatim ([reverse copy](reverse-copy.md)) |
+| `cc-clip copy --html notes.html < notes.md` | Put rich text on your local clipboard: the file as the HTML flavor, stdin as the plain-text flavor (macOS local machine only) |
 | `cc-clip paste` | Save the local clipboard image to a remote file and print its path (`--out-dir` to choose where, `--port` for a non-default tunnel port) |
 
 ## Notifications

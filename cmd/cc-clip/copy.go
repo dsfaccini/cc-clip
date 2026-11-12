@@ -16,6 +16,10 @@ import (
 // and places the bytes on the LOCAL machine's clipboard through the tunnel.
 // Text piped this way never passes through terminal rendering, so it carries
 // none of the soft-wrap newlines that mouse-selection copying injects.
+//
+// With --html FILE, FILE becomes the clipboard's HTML flavor and stdin its
+// plain-text flavor, so a paste into Slack or a mail client keeps links and
+// formatting.
 func cmdCopy() {
 	tok, err := token.ReadTokenFile()
 	if err != nil {
@@ -24,7 +28,20 @@ func cmdCopy() {
 		os.Exit(exitcode.TokenInvalid)
 	}
 	client := tunnel.NewClient(fmt.Sprintf("http://127.0.0.1:%d", getPort()), tok, 15*time.Second)
-	os.Exit(runCopy(os.Stdin, client.SendText, os.Stderr))
+	send := client.SendText
+	if path, ok := flagValue("html"); ok {
+		html, err := os.ReadFile(path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: reading --html file: %v\n", err)
+			os.Exit(exitcode.InternalError)
+		}
+		if len(html) == 0 {
+			fmt.Fprintf(os.Stderr, "error: --html file %s is empty\n", path)
+			os.Exit(exitcode.InternalError)
+		}
+		send = func(text string) error { return client.SendHTML(string(html), text) }
+	}
+	os.Exit(runCopy(os.Stdin, send, os.Stderr))
 }
 
 // runCopy is the testable core of cmdCopy: read stdin up to the size cap, send

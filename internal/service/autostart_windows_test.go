@@ -228,7 +228,7 @@ func TestInstallRollbackOnStartFailure(t *testing.T) {
 }
 
 func TestGenerateVBSContainsRestartLoop(t *testing.T) {
-	content := generateVBS(`C:\tools\cc-clip.exe`, 18339)
+	content := generateVBS(`C:\tools\cc-clip.exe`, 18339, []string{"--allow-remote-clipboard-write"})
 
 	checks := []struct {
 		name     string
@@ -236,7 +236,7 @@ func TestGenerateVBSContainsRestartLoop(t *testing.T) {
 	}{
 		{"restart loop", "Do"},
 		{"stop file check", "fso.FileExists"},
-		{"serve command", "serve --port 18339"},
+		{"serve command", "serve --port 18339 --allow-remote-clipboard-write >>"},
 		{"sleep", "WScript.Sleep 5000"},
 		{"loop end", "Loop"},
 		{"wait for exit", ", 0, True"},

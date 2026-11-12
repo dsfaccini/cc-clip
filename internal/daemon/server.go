@@ -79,6 +79,7 @@ type Server struct {
 	addr              string
 	mux               *http.ServeMux
 	textWriter        ClipboardTextWriter // nil until SetTextWriter; POST /clipboard/text answers 501 without it
+	htmlWriter        ClipboardHTMLWriter // nil until SetHTMLWriter; POST /clipboard/html answers 501 without it
 	textReadEnabled   bool                // false until EnableTextRead; GET /clipboard/text answers 403 without it
 	receiptCh         chan receiptEvent   // nil until EnableDeliveryReceipts; drained by the single receipt writer
 	receiptDrops      atomic.Int64        // receipts dropped on a full queue; reported by the writer, never the handler
@@ -105,6 +106,7 @@ func NewServer(addr string, clipboard ClipboardReader, tokens *token.Manager, se
 	s.mux.HandleFunc("GET /clipboard/image", s.authMiddleware(s.handleClipboardImage))
 	s.mux.HandleFunc("GET /clipboard/text", s.authMiddleware(s.handleClipboardText))
 	s.mux.HandleFunc("POST /clipboard/text", s.authMiddleware(s.handleClipboardWrite))
+	s.mux.HandleFunc("POST /clipboard/html", s.authMiddleware(s.handleClipboardHTMLWrite))
 	s.mux.HandleFunc("POST /notify", s.handleNotify)
 	s.mux.HandleFunc("POST /register-nonce", s.authMiddleware(s.handleRegisterNonce))
 	return s

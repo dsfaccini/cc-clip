@@ -10,7 +10,7 @@ func PlistPath() string {
 }
 
 // Install is not supported on non-darwin platforms.
-func Install(binaryPath string, port int) error {
+func Install(binaryPath string, port int, serveFlags ...string) error {
 	return fmt.Errorf("launchd service is only supported on macOS")
 }
 

@@ -190,3 +190,153 @@ func TestClipboardWriteNotificationIsNotLabelledUnverified(t *testing.T) {
 		t.Errorf("title = %q, want %q", title, "Clipboard set by remote")
 	}
 }
+
+type mockHTMLWriter struct {
+	written []ClipboardHTML
+	err     error
+}
+
+func (m *mockHTMLWriter) WriteHTML(html, text string) error {
+	m.written = append(m.written, ClipboardHTML{HTML: html, Text: text})
+	return m.err
+}
+
+func newHTMLWriteTestServer(t *testing.T) (*Server, *mockHTMLWriter, string) {
+	t.Helper()
+	tm := token.NewManager(time.Hour)
+	s, _ := tm.Generate()
+	srv := NewServer("127.0.0.1:0", &mockClipboard{}, tm, session.NewStore(12*time.Hour))
+	w := &mockHTMLWriter{}
+	srv.SetHTMLWriter(w)
+	return srv, w, s.Token
+}
+
+func postClipboardHTML(srv *Server, tok, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest("POST", "/clipboard/html", strings.NewReader(body))
+	if tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
+	req.Header.Set("User-Agent", "cc-clip/0.1")
+	w := httptest.NewRecorder()
+	srv.mux.ServeHTTP(w, req)
+	return w
+}
+
+// TestClipboardHTMLWriteEndpoint: both flavors reach the writer verbatim, and
+// the write is announced exactly like a text write.
+func TestClipboardHTMLWriteEndpoint(t *testing.T) {
+	srv, writer, tok := newHTMLWriteTestServer(t)
+
+	w := postClipboardHTML(srv, tok, `{"html":"<p>a <a href=\"https://x\">link</a></p>","text":"a [link](https://x)\n"}`)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+	want := ClipboardHTML{HTML: `<p>a <a href="https://x">link</a></p>`, Text: "a [link](https://x)\n"}
+	if len(writer.written) != 1 || writer.written[0] != want {
+		t.Fatalf("writer got %+v, want exactly %+v", writer.written, want)
+	}
+
+	select {
+	case env := <-srv.notifyCh:
+		if env.GenericMessage == nil || env.GenericMessage.Title != "Clipboard set by remote" {
+			t.Fatalf("expected the clipboard-write notification, got %+v", env)
+		}
+		if strings.Contains(env.GenericMessage.Body, "link") {
+			t.Fatalf("notification must not echo clipboard content: %+v", env.GenericMessage)
+		}
+	default:
+		t.Fatal("accepted HTML clipboard write must enqueue a notification")
+	}
+}
+
+func TestClipboardHTMLWriteRejects(t *testing.T) {
+	cases := []struct {
+		name string
+		tok  bool
+		body string
+		want int
+	}{
+		{"missing auth", false, `{"html":"<p>x</p>","text":"x"}`, http.StatusUnauthorized},
+		{"not JSON", true, "<p>x</p>", http.StatusBadRequest},
+		{"no html", true, `{"text":"x"}`, http.StatusBadRequest},
+		{"no text", true, `{"html":"<p>x</p>"}`, http.StatusBadRequest},
+		{"over the size cap", true, `{"html":"` + strings.Repeat("a", maxTextSize()) + `","text":"x"}`, http.StatusRequestEntityTooLarge},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, writer, tok := newHTMLWriteTestServer(t)
+			if !tc.tok {
+				tok = ""
+			}
+			if w := postClipboardHTML(srv, tok, tc.body); w.Code != tc.want {
+				t.Fatalf("expected %d, got %d: %s", tc.want, w.Code, w.Body.String())
+			}
+			if len(writer.written) != 0 {
+				t.Fatalf("rejected request reached the writer: %+v", writer.written)
+			}
+		})
+	}
+}
+
+// TestClipboardHTMLWriteOffWithoutWriter covers a daemon started without
+// --allow-remote-clipboard-write, and every non-macOS one: the route exists,
+// refuses with 501, and names the fix.
+func TestClipboardHTMLWriteOffWithoutWriter(t *testing.T) {
+	tm := token.NewManager(time.Hour)
+	s, _ := tm.Generate()
+	srv := NewServer("127.0.0.1:0", &mockClipboard{}, tm, session.NewStore(12*time.Hour))
+
+	w := postClipboardHTML(srv, s.Token, `{"html":"<p>x</p>","text":"x"}`)
+	if w.Code != http.StatusNotImplemented {
+		t.Fatalf("no writer: expected 501, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "--allow-remote-clipboard-write") {
+		t.Fatalf("501 must name the serve flag: %q", w.Body.String())
+	}
+}
+
+func TestClipboardHTMLWriteFailureIsReported(t *testing.T) {
+	srv, writer, tok := newHTMLWriteTestServer(t)
+	writer.err = errTestWriteFailed
+
+	if w := postClipboardHTML(srv, tok, `{"html":"<p>x</p>","text":"x"}`); w.Code != http.StatusInternalServerError {
+		t.Fatalf("writer failure: expected 500, got %d", w.Code)
+	}
+}
+
+// TestPasteboardHTMLScript pins the AppleScript the macOS writer runs. The
+// text is remote-controlled, so the cases that matter are the ones that try
+// to close the string literal and run the rest as script.
+func TestPasteboardHTMLScript(t *testing.T) {
+	cases := []struct {
+		name, html, text, want string
+	}{
+		{
+			"plain",
+			"<p>hi</p>", "hi",
+			`set the clipboard to {string:"hi", «class HTML»:«data HTML3C703E68693C2F703E»}`,
+		},
+		{
+			"quote cannot close the literal",
+			"x", `a"} & (do shell script "id") & {"`,
+			`set the clipboard to {string:"a\"} & (do shell script \"id\") & {\"", «class HTML»:«data HTML78»}`,
+		},
+		{
+			"backslash cannot escape the closing quote",
+			"x", `a\`,
+			`set the clipboard to {string:"a\\", «class HTML»:«data HTML78»}`,
+		},
+		{
+			"html quotes and non-ASCII stay inside the hex",
+			`<a href="u">é</a>`, "é\n",
+			"set the clipboard to {string:\"é\n\", «class HTML»:«data HTML3C6120687265663D2275223EC3A93C2F613E»}",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := pasteboardHTMLScript(tc.html, tc.text); got != tc.want {
+				t.Fatalf("script =\n%s\nwant\n%s", got, tc.want)
+			}
+		})
+	}
+}

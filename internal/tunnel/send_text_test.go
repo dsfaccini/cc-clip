@@ -1,11 +1,14 @@
 package tunnel
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/shunmei/cc-clip/internal/daemon"
 )
 
 // TestSendTextRoundTrip pins the client half of #128: the body reaches the
@@ -50,10 +53,10 @@ func TestSendTextErrorMapping(t *testing.T) {
 		{"unauthorized maps to ErrTokenInvalid", http.StatusUnauthorized, "", true},
 		{"too large names the limit", http.StatusRequestEntityTooLarge, "size limit", false},
 		// An old local daemon has GET /clipboard/text but no POST pattern, so
-		// Go's ServeMux answers 405; a daemon built without a writer answers
-		// 501. Both mean the same thing to the user: upgrade the LOCAL side.
+		// Go's ServeMux answers 405: upgrade the LOCAL side. A daemon with
+		// writes off answers 501 with the fix in its body.
 		{"405 from an old daemon says upgrade local", http.StatusMethodNotAllowed, "local machine", false},
-		{"501 without writer says upgrade local", http.StatusNotImplemented, "local machine", false},
+		{"501 without writer relays the daemon's reason", http.StatusNotImplemented, "local daemon refused the write: nope", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -113,5 +116,54 @@ func TestFetchHealthOldDaemonWithoutVersion(t *testing.T) {
 	}
 	if h.Version != "" {
 		t.Fatalf("old daemon must yield empty version, got %q", h.Version)
+	}
+}
+
+// TestSendHTMLRoundTrip pins the client half of POST /clipboard/html: both
+// flavors arrive verbatim in the daemon's JSON shape, with the same auth as
+// text writes, and HTML is not JSON-escaped into six-byte sequences.
+func TestSendHTMLRoundTrip(t *testing.T) {
+	const testToken = "test-token-123"
+	html := `<p>a <a href="https://x">link</a> &amp; more</p>`
+	text := "a [link](https://x) & more\n"
+
+	var got daemon.ClipboardHTML
+	var raw, gotAuth, gotType string
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /clipboard/html", func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		raw, gotAuth, gotType = string(b), r.Header.Get("Authorization"), r.Header.Get("Content-Type")
+		if err := json.Unmarshal(b, &got); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	ts := newIPv4TestServer(t, mux)
+	defer ts.Close()
+
+	if err := NewClient(ts.URL, testToken, 5*time.Second).SendHTML(html, text); err != nil {
+		t.Fatalf("SendHTML: %v", err)
+	}
+	if got.HTML != html || got.Text != text {
+		t.Fatalf("daemon received %+v, want html %q and text %q", got, html, text)
+	}
+	if strings.Contains(raw, `\u003c`) {
+		t.Fatalf("HTML was JSON-escaped on the wire: %s", raw)
+	}
+	if gotAuth != "Bearer "+testToken || gotType != "application/json" {
+		t.Fatalf("Authorization = %q, Content-Type = %q", gotAuth, gotType)
+	}
+}
+
+// TestSendHTMLToDaemonWithoutRoute: a daemon older than the route answers 404,
+// which must read as "upgrade the local side", not as a generic failure.
+func TestSendHTMLToDaemonWithoutRoute(t *testing.T) {
+	ts := newIPv4TestServer(t, http.NewServeMux())
+	defer ts.Close()
+
+	err := NewClient(ts.URL, "tok", 5*time.Second).SendHTML("<p>x</p>", "x")
+	if err == nil || !strings.Contains(err.Error(), "upgrade cc-clip on the local machine") {
+		t.Fatalf("err = %v, want the upgrade hint", err)
 	}
 }

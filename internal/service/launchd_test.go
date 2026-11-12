@@ -9,7 +9,7 @@ import (
 )
 
 func TestGeneratePlist(t *testing.T) {
-	content := generatePlist("/usr/local/bin/cc-clip", 18339)
+	content := generatePlist("/usr/local/bin/cc-clip", 18339, nil)
 
 	checks := []struct {
 		name     string
@@ -36,13 +36,28 @@ func TestGeneratePlist(t *testing.T) {
 }
 
 func TestGeneratePlist_CustomPort(t *testing.T) {
-	content := generatePlist("/opt/bin/cc-clip", 9999)
+	content := generatePlist("/opt/bin/cc-clip", 9999, nil)
 
 	if !strings.Contains(content, "<string>9999</string>") {
 		t.Error("plist does not contain custom port 9999")
 	}
 	if !strings.Contains(content, "<string>/opt/bin/cc-clip</string>") {
 		t.Error("plist does not contain custom binary path")
+	}
+}
+
+// TestGeneratePlist_ServeFlags: `service install --allow-remote-clipboard-write`
+// must reach the daemon's command line, after --port, without disturbing the
+// port that update reads back.
+func TestGeneratePlist_ServeFlags(t *testing.T) {
+	content := generatePlist("/opt/bin/cc-clip", 9999, []string{"--allow-remote-clipboard-write"})
+
+	want := "<string>9999</string>\n        <string>--allow-remote-clipboard-write</string>\n    </array>"
+	if !strings.Contains(content, want) {
+		t.Fatalf("plist does not end ProgramArguments with the serve flag:\n%s", content)
+	}
+	if port, ok := parsePlistPort(content); !ok || port != 9999 {
+		t.Fatalf("parsePlistPort = %d, %v; want 9999, true", port, ok)
 	}
 }
 
@@ -73,7 +88,7 @@ func TestInstall_MockLaunchctl(t *testing.T) {
 	defer func() { launchctlLoad = originalLoad }()
 
 	// Write to a temp plist path — we test the content generation separately
-	plistContent := generatePlist(tmpDir+"/cc-clip", 18339)
+	plistContent := generatePlist(tmpDir+"/cc-clip", 18339, nil)
 	plistPath := tmpDir + "/test.plist"
 	if err := os.WriteFile(plistPath, []byte(plistContent), 0644); err != nil {
 		t.Fatalf("failed to write test plist: %v", err)
@@ -149,7 +164,7 @@ func TestStatus_MockLaunchctl(t *testing.T) {
 // update` re-registered the service on a hardcoded 18339, moving the daemon off
 // the port every existing SSH tunnel forwards.
 func TestInstalledPortRoundTrip(t *testing.T) {
-	got, ok := parsePlistPort(generatePlist("/usr/local/bin/cc-clip", 19001))
+	got, ok := parsePlistPort(generatePlist("/usr/local/bin/cc-clip", 19001, nil))
 	if !ok {
 		t.Fatal("port must be readable from a plist this package wrote")
 	}

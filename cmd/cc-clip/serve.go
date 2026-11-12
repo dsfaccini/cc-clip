@@ -72,6 +72,7 @@ func cmdServe() {
 	}
 	if hasFlag("allow-remote-clipboard-write") {
 		srv.SetTextWriter(daemon.NewClipboardTextWriter())
+		srv.SetHTMLWriter(daemon.NewClipboardHTMLWriter())
 	}
 	srv.SetVersion(version)
 	srv.SetInstanceID(instanceID)

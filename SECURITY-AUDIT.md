@@ -81,6 +81,35 @@ Change in the fork:
   `cmd/cc-clip/copy.go` already reports that clearly.
 - Keep the notification for the opt-in case, and do not dedup it.
 
+Decision, 2026-11-12: remote clipboard write is on for this deployment, and it
+covers rich text.
+
+- The opt-in is the flag only: `serve --allow-remote-clipboard-write`
+  (`cmdServe`). `CC_CLIP_ALLOW_REMOTE_WRITE` is not implemented.
+  `service install --allow-remote-clipboard-write` writes the flag into the
+  launchd plist (`generatePlist`), so the login service keeps it.
+- The same flag enables `POST /clipboard/html` (`handleClipboardHTMLWrite`). It
+  sets the HTML and plain-text flavors in one write, so a remote agent can hand
+  formatted text, such as release notes for Slack, to the Mac clipboard. Only
+  macOS has a writer; every other daemon answers `501`.
+- The macOS writer, `darwinHTMLWriter.WriteHTML`, runs `osascript` with the
+  script that `pasteboardHTMLScript` builds. The HTML enters as hex
+  `«data HTML…»`. The plain text enters as a string literal with `\` and `"`
+  escaped, so request text cannot close the literal and run as AppleScript.
+  `TestPasteboardHTMLScript` pins that escaping.
+- Text and HTML writes share the size cap (`readClipboardWriteBody`) and the
+  notification (`notifyClipboardWrite`). The notification still goes through
+  the `Deduper`: writes inside one 12-second window raise one notice.
+
+Residual risk, accepted: any process on the remote that holds the token can
+overwrite the Mac clipboard with text or rich text, at any time, without the
+operator's action. That is the paste-hijack primitive above: an agent can
+replace what the operator copied, or plant a command for a shell paste. Rich
+text adds one variant: a pasted link can show one target and open another.
+The only signal is the notification, which is best-effort and deduplicated.
+Paste into a shell only what you copied yourself after the last
+"Clipboard set by remote" notice.
+
 ### 3. The token is a bearer credential for every host, and it is sent to
 whatever listens on the remote's port
 
@@ -217,10 +246,13 @@ to any host name and spoof delivery receipts
 | Path | What the remote controls | Reachable input |
 |---|---|---|
 | `POST /clipboard/text` → `darwinTextWriter.WriteText` | clipboard contents verbatim | body, ≤ 1 MB (`maxTextSize`) |
+| `POST /clipboard/html` → `darwinHTMLWriter.WriteHTML` → `osascript` | HTML and plain-text flavors verbatim | JSON body, ≤ 1 MB (`maxTextSize`) |
 | `POST /notify` → `DeliveryChain` → `terminal-notifier` / `cmux notify` / `osascript` | notification title, subtitle, body, urgency, sound | body ≤ 64 KB, `GenericMessagePayload` |
 | Image transfer notification | writes a preview file `~/.cache/cc-clip/previews/preview-<sid>-<seq>.png`, `0600` | image comes from the Mac clipboard; `<sid>` comes from the `X-CC-Clip-Session` request header, truncated to 8 chars |
 
-No command execution, and no URL supplied by the remote. The only URL the code
+No command execution from request data: the one script that carries request
+text is `pasteboardHTMLScript`'s, as hex data and an escaped string literal
+(§2). No URL supplied by the remote is opened. The only URL the code
 opens is `file://` plus the daemon-built preview path in
 `buildTerminalNotifierArgs`; the icon path comes from the local environment.
 `scripts/cc-clip-notify.swift` is not referenced by any Go code, the Makefile or

@@ -165,7 +165,8 @@ Local daemon and diagnostics (run on your local machine):
     --allow-remote-clipboard-write
                      Let remotes set the local clipboard (default: off)
   service            Run the daemon at login (macOS launchd / Windows logon)
-    install          Install and start service
+    install          Install and start service; --allow-text-read and
+                     --allow-remote-clipboard-write pass through to serve
     uninstall        Stop and remove service
     status           Show service status
   status             Show daemon, port and token status
@@ -208,6 +209,9 @@ On the remote host (copy, notify and paste need the tunnel of an open ssh sessio
                      verbatim. Piped text carries none of the soft-wrap newlines
                      that mouse selection in a terminal injects:
                        cat file.txt | cc-clip copy
+    --html           File whose HTML becomes the clipboard's rich-text flavor;
+                     stdin is then the plain-text flavor (needs a macOS local machine):
+                       cc-clip copy --html notes.html < notes.md
     --port           Tunnel port (default: 18339)
   uninstall          Remove the clipboard shim and restore a program adopted
                      with --adopt-foreign-shim
@@ -745,7 +749,13 @@ func cmdService() {
 			log.Fatalf("cannot resolve executable path: %v", err)
 		}
 		port := getPort()
-		if err := service.Install(exePath, port); err != nil {
+		var serveFlags []string
+		for _, name := range []string{"allow-text-read", "allow-remote-clipboard-write"} {
+			if hasFlag(name) {
+				serveFlags = append(serveFlags, "--"+name)
+			}
+		}
+		if err := service.Install(exePath, port, serveFlags...); err != nil {
 			log.Fatalf("service install failed: %v", err)
 		}
 		if runtime.GOOS == "windows" {
