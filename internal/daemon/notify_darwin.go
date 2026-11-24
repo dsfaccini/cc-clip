@@ -5,6 +5,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -134,7 +135,14 @@ func (n *DarwinNotifier) Deliver(_ context.Context, env NotifyEnvelope) error {
 	}
 
 	if n.terminalNotifier != "" {
-		return n.sendViaTerminalNotifier(title, subtitle, body, imagePath, sound, env.OnClick)
+		// terminal-notifier exits non-zero when macOS does not allow its
+		// notifications. Falling back keeps every notice visible, the
+		// clipboard-write notice among them, at the cost of the click action.
+		err := n.sendViaTerminalNotifier(title, subtitle, body, imagePath, sound, env.OnClick)
+		if err == nil {
+			return nil
+		}
+		log.Printf("terminal-notifier failed, falling back to osascript: %v", err)
 	}
 	return n.sendViaOsascript(title, subtitle, body, sound)
 }

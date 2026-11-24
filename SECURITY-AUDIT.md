@@ -131,6 +131,9 @@ it for 5 minutes so the operator can copy it again.
   shell-quoted; no request field reaches it (`NotifyEnvelope.OnClick`). The
   picker passes each entry's line to `osascript` as an argument, never as
   script text.
+- When `terminal-notifier` fails, as when macOS does not allow its
+  notifications, `DarwinNotifier.Deliver` falls back to `osascript`: the
+  notice still shows, without the click.
 
 Residual risk, accepted: a secret that a remote copies to the Mac stays on disk
 for up to 6 minutes. When the daemon stops first, it stays until the next daemon
