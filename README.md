@@ -197,8 +197,12 @@ and what you should see when it works. Replace `myserver` with your host.
   ```
 
 - **You'll see:** the text in your local clipboard, and a notification
-  "Clipboard set by remote". Its text never includes what was copied, and a
-  burst of yanks shows up as one notification.
+  "Clipboard set by remote" that names the agent session behind the copy: its
+  harness and session ID, and its herdr workspace and tab when it runs in
+  herdr. Its text never includes what was copied, and a burst of yanks from
+  one session shows up as one notification. On macOS with `terminal-notifier`
+  installed, a click on it lists the remote copies of the last 5 minutes; pick
+  one to copy it again. `cc-clip history` opens the same list.
 
 ### Get a desktop notification when the agent needs you
 

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
+	"runtime"
 	"time"
 
 	"github.com/shunmei/cc-clip/internal/daemon"
@@ -70,9 +72,11 @@ func cmdServe() {
 	if hasFlag("allow-text-read") {
 		srv.EnableTextRead()
 	}
+	clipHistory := openClipHistory()
 	if hasFlag("allow-remote-clipboard-write") {
 		srv.SetTextWriter(daemon.NewClipboardTextWriter())
 		srv.SetHTMLWriter(daemon.NewClipboardHTMLWriter())
+		enableClipHistory(srv, clipHistory)
 	}
 	srv.SetVersion(version)
 	srv.SetInstanceID(instanceID)
@@ -97,6 +101,9 @@ func cmdServe() {
 	defer cancel()
 	go srv.RunNotifier(ctx, daemon.BuildDeliveryChain())
 	go store.RunCleanup(ctx, 30*time.Minute)
+	if clipHistory != nil {
+		go clipHistory.RunPrune(ctx, time.Minute)
+	}
 	go func() {
 		ticker := time.NewTicker(1 * time.Hour)
 		defer ticker.Stop()
@@ -113,6 +120,38 @@ func cmdServe() {
 	if err := srv.ServeListener(listener); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
+}
+
+// openClipHistory opens the remote clipboard-write history and deletes its
+// expired entries. It does so on every start, with or without remote
+// writes, so entries kept before a restart without the flag still expire.
+// Only macOS has the history picker, so elsewhere it returns nil.
+func openClipHistory() *daemon.ClipHistory {
+	if runtime.GOOS != "darwin" {
+		return nil
+	}
+	dir, err := daemon.ClipHistoryDir()
+	if err != nil {
+		log.Printf("WARN: clipboard history disabled: %v", err)
+		return nil
+	}
+	h := daemon.NewClipHistory(dir, daemon.ClipHistoryTTL)
+	h.Prune(time.Now())
+	return h
+}
+
+// enableClipHistory records each remote clipboard write in h for
+// `cc-clip history`, and makes a click on the write's notification run it.
+func enableClipHistory(srv *daemon.Server, h *daemon.ClipHistory) {
+	if h == nil {
+		return
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		log.Printf("WARN: clipboard history disabled: %v", err)
+		return
+	}
+	srv.EnableClipHistory(h, shQuote(exe)+" history")
 }
 
 func loadInstanceIDOrUnavailable(tokenDir string) string {

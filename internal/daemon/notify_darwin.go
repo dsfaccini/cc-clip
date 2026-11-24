@@ -134,7 +134,7 @@ func (n *DarwinNotifier) Deliver(_ context.Context, env NotifyEnvelope) error {
 	}
 
 	if n.terminalNotifier != "" {
-		return n.sendViaTerminalNotifier(title, subtitle, body, imagePath, sound)
+		return n.sendViaTerminalNotifier(title, subtitle, body, imagePath, sound, env.OnClick)
 	}
 	return n.sendViaOsascript(title, subtitle, body, sound)
 }
@@ -168,20 +168,20 @@ func (n *DarwinNotifier) Notify(_ context.Context, evt NotifyEvent) error {
 	}
 
 	if n.terminalNotifier != "" {
-		return n.sendViaTerminalNotifier(title, subtitle, body, previewPath, "")
+		return n.sendViaTerminalNotifier(title, subtitle, body, previewPath, "", "")
 	}
 	return n.sendViaOsascript(title, subtitle, body, "")
 }
 
-func (n *DarwinNotifier) sendViaTerminalNotifier(title, subtitle, body, imagePath, sound string) error {
-	args := buildTerminalNotifierArgs(title, subtitle, body, imagePath, sound, notifyAppIcon())
+func (n *DarwinNotifier) sendViaTerminalNotifier(title, subtitle, body, imagePath, sound, onClick string) error {
+	args := buildTerminalNotifierArgs(title, subtitle, body, imagePath, sound, notifyAppIcon(), onClick)
 	return exec.Command(n.terminalNotifier, args...).Run()
 }
 
 // buildTerminalNotifierArgs assembles the terminal-notifier argv. It is
 // extracted as a pure function so the flag wiring (-sound, -appIcon,
-// -contentImage) is unit-tested without executing the binary.
-func buildTerminalNotifierArgs(title, subtitle, body, imagePath, sound, appIcon string) []string {
+// -contentImage, -execute) is unit-tested without executing the binary.
+func buildTerminalNotifierArgs(title, subtitle, body, imagePath, sound, appIcon, onClick string) []string {
 	args := []string{
 		"-title", title,
 		"-subtitle", subtitle,
@@ -200,6 +200,10 @@ func buildTerminalNotifierArgs(title, subtitle, body, imagePath, sound, appIcon 
 	if imagePath != "" {
 		args = append(args, "-contentImage", imagePath)
 		args = append(args, "-open", "file://"+imagePath)
+	}
+	// The osascript fallback has no click action.
+	if onClick != "" {
+		args = append(args, "-execute", onClick)
 	}
 	return args
 }

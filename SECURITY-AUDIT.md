@@ -101,7 +101,40 @@ covers rich text.
   `TestPasteboardHTMLScript` pins that escaping.
 - Text and HTML writes share the size cap (`readClipboardWriteBody`) and the
   notification (`notifyClipboardWrite`). The notification still goes through
-  the `Deduper`: writes inside one 12-second window raise one notice.
+  the `Deduper`: writes from one origin inside one 12-second window raise one
+  notice.
+
+Decision, 2026-11-24: each write names its origin, and the macOS daemon keeps
+it for 5 minutes so the operator can copy it again.
+
+- The `X-CC-Clip-Origin` header (`internal/daemon/origin.go`) names the
+  harness, session ID, and herdr workspace and tab. `cc-clip copy` and the
+  xclip and wl-copy shims fill it from the agent's environment and herdr
+  (`cmd/cc-clip/origin.go:detectOrigin`). The remote declares it about itself:
+  a token holder can name any session. It can already set the clipboard, so a
+  false name adds only misattribution.
+- `ParseOrigin` keeps only printable characters (`unicode.IsPrint`) in each
+  field and cuts it to 64 runes. A line separator or private-use character
+  would otherwise reach `sendViaOsascript`'s `%q` as a `\u` escape, which
+  AppleScript rejects, so the notice would not show at all. The notification body shows the result, without the
+  `[unverified]` prefix: on a write it would mark every clipboard notice,
+  which spends the one marker the operator has for foreign text.
+- `ClipHistory` (`internal/daemon/cliphistory.go`) writes each accepted write
+  to `<per-user temp dir>/cc-clip-history/<unix-nanos>-<random>.json`, `0600`,
+  in a `0700` directory. `ClipHistoryDir` reads the directory with `getconf
+  DARWIN_USER_TEMP_DIR`. Time Machine excludes it. It keeps at most 50, and deletes an entry once it is older than
+  `ClipHistoryTTL` (5 minutes): on every add and read, every minute
+  (`RunPrune`), and at every daemon start, with or without
+  `--allow-remote-clipboard-write` (`cmdServe`, `openClipHistory`).
+- A click on the notification runs `cc-clip history` through
+  `terminal-notifier -execute`. The command is the daemon's own binary path,
+  shell-quoted; no request field reaches it (`NotifyEnvelope.OnClick`). The
+  picker passes each entry's line to `osascript` as an argument, never as
+  script text.
+
+Residual risk, accepted: a secret that a remote copies to the Mac stays on disk
+for up to 6 minutes. When the daemon stops first, it stays until the next daemon
+start.
 
 Residual risk, accepted: any process on the remote that holds the token can
 overwrite the Mac clipboard with text or rich text, at any time, without the
@@ -251,6 +284,7 @@ to any host name and spoof delivery receipts
 | `POST /clipboard/html` → `darwinHTMLWriter.WriteHTML` → `osascript` | HTML and plain-text flavors verbatim | JSON body, ≤ 1 MB (`maxTextSize`) |
 | `POST /notify` → `DeliveryChain` → `terminal-notifier` / `cmux notify` / `osascript` | notification title, subtitle, body, urgency, sound | body ≤ 64 KB, `GenericMessagePayload` |
 | Image transfer notification | writes a preview file `~/.cache/cc-clip/previews/preview-<sid>-<seq>.png`, `0600` | image comes from the Mac clipboard; `<sid>` comes from the `X-CC-Clip-Session` request header, truncated to 8 chars |
+| Clipboard write history (`ClipHistory.Add`) | contents of `<per-user temp dir>/cc-clip-history/<unix-nanos>-<random>.json`, `0600`, kept 5 minutes | the write's body, and its `X-CC-Clip-Origin` header after `ParseOrigin`; the file name is the daemon's clock |
 
 No command execution from request data: the one script that carries request
 text is `pasteboardHTMLScript`'s, as hex data and an escaped string literal

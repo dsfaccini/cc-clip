@@ -67,6 +67,10 @@ func main() {
 		cmdNotify()
 	case "copy":
 		cmdCopy()
+	case "origin":
+		cmdOrigin()
+	case "history":
+		cmdHistory()
 	case "plugin":
 		cmdPlugin()
 	case "x11-bridge":
@@ -169,6 +173,9 @@ Local daemon and diagnostics (run on your local machine):
                      --allow-remote-clipboard-write pass through to serve
     uninstall        Stop and remove service
     status           Show service status
+  history            Pick a remote clipboard write from the last 5 minutes and
+                     copy it again (macOS; a click on the write's notification
+                     runs it)
   status             Show daemon, port and token status
     --port           Daemon port (default: 18339)
   doctor             Local health check
@@ -209,10 +216,14 @@ On the remote host (copy, notify and paste need the tunnel of an open ssh sessio
                      verbatim. Piped text carries none of the soft-wrap newlines
                      that mouse selection in a terminal injects:
                        cat file.txt | cc-clip copy
+                     The local notification names the copy's agent session
+                     (harness, session ID, herdr workspace and tab).
     --html           File whose HTML becomes the clipboard's rich-text flavor;
                      stdin is then the plain-text flavor (needs a macOS local machine):
                        cc-clip copy --html notes.html < notes.md
     --port           Tunnel port (default: 18339)
+  origin             Print this shell's agent session as a copy's origin
+                     header; the xclip and wl-copy shims send it with each write
   uninstall          Remove the clipboard shim and restore a program adopted
                      with --adopt-foreign-shim
     --target         auto|xclip|wl-paste (default: auto; auto picks wl-paste

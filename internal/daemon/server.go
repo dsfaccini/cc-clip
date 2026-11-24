@@ -80,6 +80,8 @@ type Server struct {
 	mux               *http.ServeMux
 	textWriter        ClipboardTextWriter // nil until SetTextWriter; POST /clipboard/text answers 501 without it
 	htmlWriter        ClipboardHTMLWriter // nil until SetHTMLWriter; POST /clipboard/html answers 501 without it
+	clipHistory       *ClipHistory        // nil until EnableClipHistory; accepted writes are then recorded
+	clipHistoryClick  string              // shell command a clipboard-write notification runs on click
 	textReadEnabled   bool                // false until EnableTextRead; GET /clipboard/text answers 403 without it
 	receiptCh         chan receiptEvent   // nil until EnableDeliveryReceipts; drained by the single receipt writer
 	receiptDrops      atomic.Int64        // receipts dropped on a full queue; reported by the writer, never the handler

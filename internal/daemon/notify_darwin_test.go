@@ -62,15 +62,16 @@ func TestDarwinNotifierDoesNotCleanupPreviewsOnDeliverHotPath(t *testing.T) {
 
 func TestBuildTerminalNotifierArgs(t *testing.T) {
 	t.Run("sound, appIcon and contentImage included when set", func(t *testing.T) {
-		args := buildTerminalNotifierArgs("T", "S", "B", "/tmp/p.png", "Ping", "/tmp/icon.png")
+		args := buildTerminalNotifierArgs("T", "S", "B", "/tmp/p.png", "Ping", "/tmp/icon.png", "'/bin/cc-clip' history")
 		assertArgPair(t, args, "-title", "T")
 		assertArgPair(t, args, "-sound", "Ping")
 		assertArgPair(t, args, "-appIcon", "/tmp/icon.png")
 		assertArgPair(t, args, "-contentImage", "/tmp/p.png")
+		assertArgPair(t, args, "-execute", "'/bin/cc-clip' history")
 	})
 	t.Run("optional flags omitted when empty", func(t *testing.T) {
-		args := buildTerminalNotifierArgs("T", "S", "B", "", "", "")
-		for _, flag := range []string{"-sound", "-appIcon", "-contentImage"} {
+		args := buildTerminalNotifierArgs("T", "S", "B", "", "", "", "")
+		for _, flag := range []string{"-sound", "-appIcon", "-contentImage", "-execute"} {
 			if containsArg(args, flag) {
 				t.Fatalf("expected no %s flag, got %v", flag, args)
 			}

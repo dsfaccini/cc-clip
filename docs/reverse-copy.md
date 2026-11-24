@@ -132,10 +132,21 @@ If neither line appears, the shim is not on `PATH` ahead of the real binary.
   Slack or a mail client keeps links and formatting. Rich text needs a macOS
   local machine. Images do not travel in this direction; open an issue if you
   have a case that needs them.
-- An accepted write raises a local notification. Its text is fixed — "A remote
-  session wrote to this clipboard." — and deliberately says nothing about the
-  content or its size, so a burst of yanks collapses into one notification
-  through the dedup window instead of one per yank. At least one always fires
-  per window, so a remote poisoning your clipboard is still visible.
+- An accepted write raises a local notification. It names the write's origin
+  — "From claude 9e3498e5 · gates → mgr": the harness, the session ID's first
+  8 characters, and the herdr workspace and tab — or says "A remote session
+  wrote to this clipboard." when the remote sent none. It deliberately says
+  nothing about the content or its size, so a burst of yanks from one session
+  collapses into one notification through the dedup window instead of one per
+  yank. At least one always fires per window, so a remote poisoning your
+  clipboard is still visible.
+- `cc-clip copy` and the xclip and wl-copy shims (through `cc-clip origin`)
+  read the origin from `CLAUDE_CODE_SESSION_ID` or `CODEX_THREAD_ID`, and from
+  herdr when the write comes from a herdr pane. The remote declares it about
+  itself.
+- A macOS daemon keeps each write for 5 minutes in `cc-clip-history` under the
+  per-user temp directory (`getconf DARWIN_USER_TEMP_DIR`).
+  With `terminal-notifier` installed, a click on the notification runs
+  `cc-clip history`: it lists those writes and copies the one you pick again.
 - The local daemon caps a single write at 1 MB (`CC_CLIP_MAX_TEXT_MB`).
 - `-selection primary` is not forwarded. Only the clipboard selection is.

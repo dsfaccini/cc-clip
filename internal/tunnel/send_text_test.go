@@ -167,3 +167,28 @@ func TestSendHTMLToDaemonWithoutRoute(t *testing.T) {
 		t.Fatalf("err = %v, want the upgrade hint", err)
 	}
 }
+
+// TestClipboardWriteSendsOrigin: a write carries the origin set on the client,
+// and no origin header when none is set.
+func TestClipboardWriteSendsOrigin(t *testing.T) {
+	var got []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /clipboard/text", func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.Header.Get(daemon.OriginHeader))
+		w.WriteHeader(http.StatusNoContent)
+	})
+	ts := newIPv4TestServer(t, mux)
+	defer ts.Close()
+
+	client := NewClient(ts.URL, "tok", 5*time.Second)
+	if err := client.SendText("a"); err != nil {
+		t.Fatal(err)
+	}
+	client.SetOrigin("harness=claude&session=abc")
+	if err := client.SendText("b"); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0] != "" || got[1] != "harness=claude&session=abc" {
+		t.Fatalf("origin headers = %q", got)
+	}
+}

@@ -28,6 +28,7 @@ func cmdCopy() {
 		os.Exit(exitcode.TokenInvalid)
 	}
 	client := tunnel.NewClient(fmt.Sprintf("http://127.0.0.1:%d", getPort()), tok, 15*time.Second)
+	client.SetOrigin(currentOrigin())
 	send := client.SendText
 	if path, ok := flagValue("html"); ok {
 		html, err := os.ReadFile(path)

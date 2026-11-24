@@ -99,10 +99,30 @@ _cc_clip_session_header() {
 _cc_clip_curl_config() {
     local token="$1"
     local session_hdr="${2:-}"
+    local origin_hdr="${3:-}"
     printf 'header = "Authorization: Bearer %%s"\n' "$token"
     printf 'header = "User-Agent: cc-clip/0.1"\n'
     if [ -n "$session_hdr" ]; then
         printf 'header = "%%s"\n' "$session_hdr"
+    fi
+    if [ -n "$origin_hdr" ]; then
+        printf 'header = "%%s"\n' "$origin_hdr"
+    fi
+}
+
+# The agent session behind a clipboard write, for the local notification and
+# history. Its value is URL-encoded, so it cannot break the curl config line.
+# An older cc-clip without the origin command fails, and the write goes
+# without the header.
+_cc_clip_origin_header() {
+    local bin="$_CC_CLIP_SELF_DIR/cc-clip"
+    local origin
+    if [ ! -x "$bin" ]; then
+        bin=$(command -v cc-clip) || return 0
+    fi
+    origin=$("$bin" origin 2>/dev/null) || return 0
+    if [ -n "$origin" ]; then
+        echo "X-CC-Clip-Origin: $origin"
     fi
 }
 
@@ -124,9 +144,10 @@ _cc_clip_post_text() {
     token=$(_cc_clip_read_token) || return 12
     local timeout_s
     timeout_s=$(awk "BEGIN {printf \"%%f\", ${CC_CLIP_FETCH_TIMEOUT_MS}/1000}")
-    local session_hdr
+    local session_hdr origin_hdr
     session_hdr=$(_cc_clip_session_header)
-    _cc_clip_curl_config "$token" "$session_hdr" | curl -sf --max-time "$timeout_s" \
+    origin_hdr=$(_cc_clip_origin_header)
+    _cc_clip_curl_config "$token" "$session_hdr" "$origin_hdr" | curl -sf --max-time "$timeout_s" \
         -X POST -H "Content-Type: text/plain; charset=utf-8" \
         --data-binary @"$file" \
         -K - \

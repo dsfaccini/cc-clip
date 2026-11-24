@@ -55,6 +55,12 @@ func (c *Client) SendHTML(html, text string) error {
 	return c.postClipboardWrite("/clipboard/html", "application/json", &body)
 }
 
+// SetOrigin names the agent session behind this client's clipboard writes,
+// as an encoded daemon.Origin.
+func (c *Client) SetOrigin(origin string) {
+	c.origin = origin
+}
+
 func (c *Client) postClipboardWrite(path, contentType string, body io.Reader) error {
 	req, err := http.NewRequest("POST", c.baseURL+path, body)
 	if err != nil {
@@ -63,6 +69,9 @@ func (c *Client) postClipboardWrite(path, contentType string, body io.Reader) er
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("User-Agent", defaultUserAgent)
 	req.Header.Set("Content-Type", contentType)
+	if c.origin != "" {
+		req.Header.Set(daemon.OriginHeader, c.origin)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

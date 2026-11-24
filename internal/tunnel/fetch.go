@@ -42,6 +42,7 @@ func maxFetchImageSize() int {
 type Client struct {
 	baseURL    string
 	token      string
+	origin     string // OriginHeader value for clipboard writes; "" sends none
 	httpClient *http.Client
 }
 

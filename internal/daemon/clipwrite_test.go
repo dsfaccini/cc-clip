@@ -340,3 +340,55 @@ func TestPasteboardHTMLScript(t *testing.T) {
 		})
 	}
 }
+
+// A write's notification names its origin, and the history keeps the write
+// so a click on the notification can copy it again. The notification still
+// carries none of the content.
+func TestClipboardWriteRecordsOriginAndHistory(t *testing.T) {
+	srv, _, tok := newWriteTestServer(t)
+	h := NewClipHistory(t.TempDir(), time.Minute)
+	srv.EnableClipHistory(h, "'/bin/cc-clip' history")
+
+	req := httptest.NewRequest("POST", "/clipboard/text", strings.NewReader("secret-ish text"))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("User-Agent", "cc-clip/0.1")
+	req.Header.Set(OriginHeader, Origin{Harness: "claude", Session: "9e3498e5-01d1", Workspace: "gates", Tab: "mgr"}.Encode())
+	w := httptest.NewRecorder()
+	srv.mux.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+
+	env := <-srv.NotifyChannel()
+	if env.GenericMessage.Body != "From claude 9e3498e5 · gates → mgr" {
+		t.Errorf("body = %q", env.GenericMessage.Body)
+	}
+	if env.OnClick != "'/bin/cc-clip' history" {
+		t.Errorf("OnClick = %q", env.OnClick)
+	}
+
+	entries, err := h.Entries(time.Now())
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("history = %+v, %v; want one entry", entries, err)
+	}
+	if entries[0].Text != "secret-ish text" || entries[0].Origin.Workspace != "gates" {
+		t.Errorf("history entry = %+v", entries[0])
+	}
+}
+
+func TestClipboardHTMLWriteRecordsBothFlavors(t *testing.T) {
+	srv, _, tok := newHTMLWriteTestServer(t)
+	h := NewClipHistory(t.TempDir(), time.Minute)
+	srv.EnableClipHistory(h, "")
+
+	if w := postClipboardHTML(srv, tok, `{"html":"<b>x</b>","text":"x"}`); w.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+	entries, _ := h.Entries(time.Now())
+	if len(entries) != 1 || entries[0].HTML != "<b>x</b>" || entries[0].Text != "x" {
+		t.Fatalf("history = %+v, want the HTML write", entries)
+	}
+	if env := <-srv.notifyCh; env.GenericMessage.Body != "A remote session wrote to this clipboard." {
+		t.Errorf("a write without an origin got body %q", env.GenericMessage.Body)
+	}
+}

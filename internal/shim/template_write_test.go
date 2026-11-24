@@ -18,8 +18,15 @@ import (
 // writeMockDaemon records POST /clipboard/text bodies so tests can assert the
 // forwarded payload byte-for-byte.
 type writeMockDaemon struct {
-	mu     sync.Mutex
-	bodies []string
+	mu      sync.Mutex
+	bodies  []string
+	origins []string // each post's X-CC-Clip-Origin header, "" when absent
+}
+
+func (m *writeMockDaemon) originHeaders() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.origins...)
 }
 
 func (m *writeMockDaemon) posts() []string {
@@ -48,6 +55,7 @@ func startWriteMockDaemon(t *testing.T) (*writeMockDaemon, int) {
 			}
 			m.mu.Lock()
 			m.bodies = append(m.bodies, string(b))
+			m.origins = append(m.origins, r.Header.Get("X-CC-Clip-Origin"))
 			m.mu.Unlock()
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -99,6 +107,13 @@ type writeShimRun struct {
 // daemonUp=false).
 func runWriteShim(t *testing.T, render func(port int, real string) string, realName string, realExists, daemonUp bool, stdin string, args ...string) writeShimRun {
 	t.Helper()
+	return runWriteShimWithCCClip(t, render, realName, realExists, daemonUp, "", stdin, args...)
+}
+
+// runWriteShimWithCCClip is runWriteShim with ccClip, when non-empty, written
+// as an executable cc-clip next to the shim.
+func runWriteShimWithCCClip(t *testing.T, render func(port int, real string) string, realName string, realExists, daemonUp bool, ccClip, stdin string, args ...string) writeShimRun {
+	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("bash semantics not reliable on windows test dirs")
 	}
@@ -133,6 +148,11 @@ func runWriteShim(t *testing.T, render func(port int, real string) string, realN
 	shimPath := filepath.Join(tmp, "shim.sh")
 	if err := os.WriteFile(shimPath, []byte(render(port, realPath)), 0o755); err != nil {
 		t.Fatal(err)
+	}
+	if ccClip != "" {
+		if err := os.WriteFile(filepath.Join(tmp, "cc-clip"), []byte(ccClip), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	cmd := exec.Command("bash", append([]string{bashPath(shimPath)}, args...)...)
@@ -330,5 +350,45 @@ func TestInstallWaylandShipsWlCopyCompanion(t *testing.T) {
 	}
 	if _, err := os.Stat(wlCopy); !os.IsNotExist(err) {
 		t.Fatalf("wl-copy companion must be removed with its sibling, stat err=%v", err)
+	}
+}
+
+// TestShimWriteSendsOrigin: each write shim sends what the cc-clip next to it
+// prints for `origin`. An older cc-clip without the command exits non-zero
+// after printing its usage, and the write goes without the header.
+func TestShimWriteSendsOrigin(t *testing.T) {
+	shims := []struct {
+		name     string
+		render   func(port int, real string) string
+		realName string
+		args     []string
+	}{
+		{"xclip", XclipShim, "xclip", []string{"-selection", "clipboard"}},
+		{"wl-copy", WlCopyShim, "wl-copy", nil},
+	}
+	cases := []struct {
+		name   string
+		ccClip string
+		want   string
+	}{
+		{"current cc-clip", "#!/bin/sh\n[ \"$1\" = origin ] && echo 'harness=claude&tab=a+%22b%22'\n", "harness=claude&tab=a+%22b%22"},
+		{"cc-clip without origin", "#!/bin/sh\necho 'cc-clip usage \"quoted\"'\nexit 1\n", ""},
+		{"no cc-clip", "", ""},
+	}
+	for _, sh := range shims {
+		for _, c := range cases {
+			t.Run(sh.name+"/"+c.name, func(t *testing.T) {
+				r := runWriteShimWithCCClip(t, sh.render, sh.realName, true, true, c.ccClip, "payload\n", sh.args...)
+				if r.exitCode != 0 {
+					t.Fatalf("exit=%d output=%q", r.exitCode, r.output)
+				}
+				if posts := r.daemon.posts(); len(posts) != 1 || posts[0] != "payload\n" {
+					t.Fatalf("daemon got %q, want the payload once", posts)
+				}
+				if got := r.daemon.originHeaders(); got[0] != c.want {
+					t.Fatalf("origin header %q, want %q", got[0], c.want)
+				}
+			})
+		}
 	}
 }

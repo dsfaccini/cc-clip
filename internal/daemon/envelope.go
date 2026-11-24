@@ -24,6 +24,9 @@ type NotifyEnvelope struct {
 	// attributes a delivery receipt and never gates delivery.
 	Target    string
 	Timestamp time.Time
+	// OnClick is a shell command the macOS notifier runs when the user clicks
+	// the notification. Only the daemon sets it: no /notify field maps to it.
+	OnClick string
 
 	ImageTransfer  *ImageTransferPayload
 	ToolAttention  *ToolAttentionPayload

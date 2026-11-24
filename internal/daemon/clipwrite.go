@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -45,6 +46,14 @@ func (s *Server) SetHTMLWriter(w ClipboardHTMLWriter) {
 	s.htmlWriter = w
 }
 
+// EnableClipHistory records every accepted clipboard write in h, and makes a
+// click on the write's notification run onClick, a shell command that lets
+// the user copy a recorded write again.
+func (s *Server) EnableClipHistory(h *ClipHistory, onClick string) {
+	s.clipHistory = h
+	s.clipHistoryClick = onClick
+}
+
 // handleClipboardWrite accepts text from an authenticated remote and places it
 // on the local clipboard verbatim. Newlines are NOT normalized: preserving the
 // exact bytes is the point (#128) — the terminal's soft-wrap mangling is what
@@ -75,7 +84,9 @@ func (s *Server) handleClipboardWrite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.notifyClipboardWrite()
+	origin := ParseOrigin(r.Header.Get(OriginHeader))
+	s.recordClipboardWrite(ClipHistoryEntry{At: time.Now(), Origin: origin, Text: string(body)})
+	s.notifyClipboardWrite(origin)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -107,7 +118,9 @@ func (s *Server) handleClipboardHTMLWrite(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	s.notifyClipboardWrite()
+	origin := ParseOrigin(r.Header.Get(OriginHeader))
+	s.recordClipboardWrite(ClipHistoryEntry{At: time.Now(), Origin: origin, Text: clip.Text, HTML: clip.HTML})
+	s.notifyClipboardWrite(origin)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -126,29 +139,47 @@ func readClipboardWriteBody(w http.ResponseWriter, r *http.Request) ([]byte, boo
 	return body, true
 }
 
+// recordClipboardWrite adds an accepted write to the clipboard history, when
+// one is enabled. A failure is logged: the write itself already succeeded.
+func (s *Server) recordClipboardWrite(e ClipHistoryEntry) {
+	if s.clipHistory == nil {
+		return
+	}
+	if err := s.clipHistory.Add(e); err != nil {
+		log.Printf("WARN: clipboard history: %v", err)
+	}
+}
+
 // notifyClipboardWrite announces an accepted clipboard write. Text and HTML
-// writes share this one constant message, so a burst of either collapses
+// writes from one origin share one message, so a burst of either collapses
 // into one notification through the dedup window.
-func (s *Server) notifyClipboardWrite() {
+func (s *Server) notifyClipboardWrite(origin Origin) {
+	// Deliberately STABLE text per origin (no byte count, no content): the
+	// dedup window keys on the envelope fingerprint, so a burst of writes —
+	// every neovim yank on the transparent shim path (#128 phase 2) is one
+	// write — collapses into a single notification instead of one per yank.
+	// Poisoning visibility is preserved: at least one notification always
+	// fires per window.
+	body := "A remote session wrote to this clipboard."
+	if label := origin.Label(); label != "" {
+		body = "From " + label
+	}
 	s.enqueueEnvelope(NotifyEnvelope{
 		Kind:      KindGenericMessage,
 		Source:    "clipboard-write",
 		Timestamp: time.Now().UTC(),
+		OnClick:   s.clipHistoryClick,
 		GenericMessage: &GenericMessagePayload{
-			Title: "Clipboard set by remote",
-			// Deliberately STABLE text (no byte count): the dedup window keys
-			// on the envelope fingerprint, so a constant body lets a burst of
-			// writes — every neovim yank on the transparent shim path (#128
-			// phase 2) is one write — collapse into a single notification
-			// instead of spamming one per yank. Poisoning visibility is
-			// preserved: at least one notification always fires per window.
-			Body:    "A remote session wrote to this clipboard.",
+			Title:   "Clipboard set by remote",
+			Body:    body,
 			Urgency: 0,
-			// The daemon authored this text itself; none of it came from the
-			// request. Leaving Verified false made formatNotification prefix
-			// the daemon's own message with "[unverified]", which is the one
-			// marker a user has for "this text is not ours" — spending it on
-			// our own notification is what makes it stop meaning anything.
+			// The title is the daemon's own. The origin label is the remote's
+			// account of itself, cleaned and capped by ParseOrigin, from a
+			// token holder that could already set the clipboard. Leaving
+			// Verified false would prefix every clipboard-write notification
+			// with "[unverified]", the one marker a user has for "this text is
+			// not ours"; spending it on every write makes it stop meaning
+			// anything.
 			Verified: true,
 		},
 	})
